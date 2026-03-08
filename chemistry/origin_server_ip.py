@@ -302,8 +302,6 @@ class OriginVerifier:
     def verify_cert(self, ip: str) -> bool:
         try:
             ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode    = ssl.CERT_NONE
             with ctx.wrap_socket(
                 socket.create_connection((ip, 443), timeout=5),
                 server_hostname=self.domain,
@@ -323,8 +321,6 @@ class OriginVerifier:
             try:
                 if use_ssl:
                     ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode    = ssl.CERT_NONE
                     raw  = socket.create_connection((ip, port), timeout=5)
                     conn = ctx.wrap_socket(raw, server_hostname=self.domain)
                 else:
@@ -506,8 +502,6 @@ class SSLCertificateScanner:
     def _probe_cert_san(self, ip: str) -> bool:
         try:
             ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode    = ssl.CERT_NONE
             with ctx.wrap_socket(
                 socket.create_connection((ip, 443), timeout=3),
                 server_hostname=self.domain,

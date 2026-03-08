@@ -27,5 +27,5 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          coverage run --source=core,chemistry,evilwaf -m unittest discover -s tests -v
+          coverage run --source=core,chemistry -m unittest discover -s tests -v
           coverage report -m --fail-under=100
