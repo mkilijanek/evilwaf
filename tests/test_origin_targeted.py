@@ -48,7 +48,7 @@ class OriginTargetedTest(unittest.IsolatedAsyncioTestCase):
 
         with mock.patch.object(o.socket, "create_connection", side_effect=Exception("x")):
             self.assertFalse(v.verify_http("8.8.8.8"))
-        with mock.patch.object(o.ssl, "create_default_context", side_effect=Exception("x")):
+        with mock.patch.object(o, "_tls_client_context", side_effect=Exception("x")):
             self.assertFalse(v.verify_cert("8.8.8.8"))
 
         class Conn:
@@ -67,7 +67,7 @@ class OriginTargetedTest(unittest.IsolatedAsyncioTestCase):
             def close(self):
                 return None
 
-        with mock.patch.object(o.ssl, "create_default_context", side_effect=Exception("x")):
+        with mock.patch.object(o, "_tls_client_context", side_effect=Exception("x")):
             with mock.patch.object(o.socket, "create_connection", return_value=Conn()):
                 self.assertTrue(v.verify_http("8.8.8.8"))
 

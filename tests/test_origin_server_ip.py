@@ -122,7 +122,7 @@ class OriginScannersTest(unittest.IsolatedAsyncioTestCase):
             def wrap_socket(self, raw, server_hostname=None):
                 return Conn()
 
-        with mock.patch.object(o.ssl, "create_default_context", return_value=Ctx()):
+        with mock.patch.object(o, "_tls_client_context", return_value=Ctx()):
             with mock.patch.object(o.socket, "create_connection", return_value=object()):
                 self.assertTrue(v.verify_http("8.8.8.8"))
 
@@ -153,7 +153,7 @@ class OriginScannersTest(unittest.IsolatedAsyncioTestCase):
             def wrap_socket(self, raw, server_hostname=None):
                 return Sock()
 
-        with mock.patch.object(o.ssl, "create_default_context", return_value=Ctx()):
+        with mock.patch.object(o, "_tls_client_context", return_value=Ctx()):
             with mock.patch.object(o.socket, "create_connection", return_value=object()):
                 self.assertTrue(s._probe_cert_san("8.8.8.8"))
 
