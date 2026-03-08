@@ -1,5 +1,6 @@
 import unittest
 from unittest import mock
+import threading
 
 from _deps import install_dependency_stubs
 
@@ -16,8 +17,18 @@ class ChemistryModulesTest(unittest.TestCase):
         m = t.TCPOptionsManipulator()
         prof = m.get_profile("chrome")
         self.assertIn("options", prof)
+        self.assertIn("options", m.firefox_profile())
+        self.assertIn("options", m.safari_profile())
+        self.assertIn("options", m.edge_profile())
+        self.assertIn("options", m.linux_kernel_profile())
+        self.assertIn("options", m.windows_11_profile())
+        self.assertIn("options", m.macos_ventura_profile())
+        self.assertIn("options", m.android_profile())
+        self.assertIn("options", m.ios_profile())
         r = m.rotate()
         self.assertIn("window", r)
+        self.assertIn("options", m.get_profile())
+        self.assertIn("rotation_count", m.per_request_options())
 
         class Resp:
             def haslayer(self, layer):
@@ -31,9 +42,13 @@ class ChemistryModulesTest(unittest.TestCase):
 
         with mock.patch.object(t, "sr1", return_value=Resp()):
             self.assertIsNotNone(m.send_syn("8.8.8.8", 443, "chrome"))
+        with mock.patch.object(t, "sr1", return_value=None):
+            self.assertIsNone(m.send_syn("8.8.8.8", 443, "chrome"))
 
     def test_tls_fingerprinter_paths(self):
         f = tls.TLSFingerprinter()
+        _, random_id = f.get_session()
+        self.assertTrue(random_id)
         _, id1 = f.get_session("chrome_120")
         self.assertEqual(id1, "chrome_120")
 
@@ -45,9 +60,15 @@ class ChemistryModulesTest(unittest.TestCase):
 
         _, mapped = f.paired_with_tcp("windows11")
         self.assertEqual(mapped, "edge_120")
+        _, fallback = f.paired_with_tcp("unknown-profile")
+        self.assertTrue(fallback)
 
         data = f.per_request_session()
         self.assertIn("session", data)
+        _, random_custom = f.get_custom_session()
+        self.assertTrue(random_custom)
+        _, fallback_custom = f.get_custom_session("missing-profile")
+        self.assertTrue(fallback_custom)
 
     def test_proxy_rotator_flow(self):
         with mock.patch.object(p.ProxyRotator, "_probe_proxies", return_value=[]):
@@ -63,6 +84,39 @@ class ChemistryModulesTest(unittest.TestCase):
             self.assertTrue(r.get_proxy_dict())
             self.assertIn("proxies", r.per_request_proxy())
             self.assertIn("available_proxies", r.get_stats())
+
+    def test_proxy_rotator_probe_and_fallback_paths(self):
+        r = p.ProxyRotator.__new__(p.ProxyRotator)
+        r._proxies = [{"type": 1, "addr": "127.0.0.1", "port": 9050, "url": "socks5://127.0.0.1:9050"}]
+        r._lock = threading.Lock()
+        r._current_index = 0
+        r._rotation_counter = 0
+
+        s = mock.Mock()
+        with mock.patch.object(p.socks, "create_connection", return_value=s):
+            alive = p.ProxyRotator._probe_proxies(r)
+            self.assertEqual(len(alive), 1)
+        with mock.patch.object(p.socks, "create_connection", side_effect=Exception("x")):
+            alive2 = p.ProxyRotator._probe_proxies(r)
+            self.assertEqual(alive2, [])
+
+        r._proxies = []
+        with mock.patch.object(p.socket, "create_connection", return_value=mock.Mock()) as cc:
+            out = p.ProxyRotator.create_connection(r, "example.com", 80)
+            self.assertTrue(cc.called)
+        self.assertEqual(p.ProxyRotator.get_proxy_dict(r), {})
+        self.assertIn("proxies", p.ProxyRotator.per_request_proxy(r))
+        parsed_default = p.ProxyRotator._parse_proxy_url(r, "://bad")
+        self.assertIsNotNone(parsed_default)
+        self.assertEqual(parsed_default["scheme"], "socks5")
+        self.assertIsNone(p.ProxyRotator._parse_proxy_url(r, "gopher://x"))
+        with mock.patch.object(p, "urlparse", side_effect=Exception("x")):
+            self.assertIsNone(p.ProxyRotator._parse_proxy_url(r, "http://x"))
+
+    def test_proxy_rotator_post_init_prefers_alive(self):
+        with mock.patch.object(p.ProxyRotator, "_probe_proxies", return_value=[{"url": "http://alive", "type": 3, "addr": "a", "port": 1}]):
+            r = p.ProxyRotator(["http://one:1"])
+        self.assertEqual(len(r._proxies), 1)
 
     def test_tor_rotator_flow(self):
         with mock.patch.object(tor.TorRotator, "_probe_proxies", return_value=[{"http": "socks5://127.0.0.1:9050", "https": "socks5://127.0.0.1:9050"}]):
@@ -89,6 +143,83 @@ class ChemistryModulesTest(unittest.TestCase):
                     ok, ip = r.rotate_and_verify(max_attempts=1)
                     self.assertTrue(ok)
                     self.assertEqual(ip, "203.0.113.6")
+
+    def test_tor_rotator_internal_probes_and_controller(self):
+        r = tor.TorRotator.__new__(tor.TorRotator)
+        r.control_password = ""
+        r.control_port = 9051
+        r.tor_proxy = "socks5://127.0.0.1:9050"
+        r._available_control_ports = [9051]
+
+        fake = mock.Mock()
+        fake.__enter__ = mock.Mock(return_value=fake)
+        fake.__exit__ = mock.Mock(return_value=False)
+
+        good_resp = mock.Mock()
+        good_resp.json.return_value = {"IsTor": True}
+        with mock.patch.object(tor.requests, "get", return_value=good_resp):
+            alive = tor.TorRotator._probe_proxies(r)
+            self.assertTrue(alive)
+
+        with mock.patch.object(tor.Controller, "from_port", return_value=fake):
+            ports = tor.TorRotator._probe_control_ports(r)
+            self.assertTrue(ports)
+            self.assertTrue(tor.TorRotator._rotate_all_circuits(r))
+            c = tor.TorRotator._controller(r)
+            self.assertIsNotNone(c)
+        with mock.patch.object(tor.Controller, "from_port", side_effect=Exception("x")):
+            ports2 = tor.TorRotator._probe_control_ports(r)
+            self.assertEqual(ports2, [])
+
+    def test_tor_rotator_fallback_and_error_paths(self):
+        with mock.patch.object(tor.TorRotator, "_probe_proxies", return_value=[]):
+            with mock.patch.object(tor.TorRotator, "_probe_control_ports", return_value=[]):
+                r = tor.TorRotator(control_port=9999, tor_proxy="socks5://x:1")
+        self.assertEqual(r._available_control_ports, [9999])
+        self.assertEqual(r._available_proxies, [{"http": "socks5://x:1", "https": "socks5://x:1"}])
+
+        r._available_proxies = []
+        self.assertEqual(r._next_proxy()["http"], "socks5://x:1")
+
+        with mock.patch.object(tor.requests, "get", side_effect=Exception("x")):
+            self.assertIsNone(r.get_current_ip())
+            self.assertFalse(r.is_tor_alive())
+
+        with mock.patch.object(r, "rotate_circuit", return_value=False):
+            ok, ip = r.rotate_and_verify(max_attempts=1)
+            self.assertFalse(ok)
+
+    def test_tor_rotator_remaining_branches(self):
+        r = tor.TorRotator.__new__(tor.TorRotator)
+        r.control_password = ""
+        r.control_port = 9051
+        r.tor_proxy = "socks5://127.0.0.1:9050"
+        r._available_proxies = [{"http": "h", "https": "h"}]
+        r._available_control_ports = [9051]
+        r._lock = threading.Lock()
+        r._last_rotation_time = tor.time.time()
+        r.min_rotate_interval = 5
+        r._rotation_counter = 0
+        r._current_ip = None
+        r._current_proxy_index = 0
+
+        with mock.patch.object(tor, "TOR_PROXIES", [{"http": "h", "https": "h"}]):
+            with mock.patch.object(tor.requests, "get", side_effect=Exception("x")):
+                self.assertEqual(tor.TorRotator._probe_proxies(r), [])
+
+        with mock.patch.object(tor.Controller, "from_port", side_effect=Exception("x")):
+            self.assertFalse(tor.TorRotator._rotate_all_circuits(r))
+            with self.assertRaises(Exception):
+                tor.TorRotator._controller(r)
+
+        with mock.patch.object(tor.time, "sleep", return_value=None):
+            with mock.patch.object(r, "_rotate_all_circuits", return_value=True):
+                self.assertTrue(r.rotate_circuit())
+
+        self.assertIn("http", r.get_proxy_dict())
+
+        with mock.patch.object(tor.requests, "get", side_effect=Exception("x")):
+            self.assertFalse(r.is_tor_alive())
 
 
 if __name__ == "__main__":
