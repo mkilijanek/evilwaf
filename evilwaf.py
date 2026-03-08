@@ -64,7 +64,7 @@ def _hunt_origin_ip_verbose(target: str) -> Optional[str]:
     domain = parsed.hostname or parsed.netloc
 
     print(f"\n[*] Origin IP Hunter started for: {domain}")
-    print(f"[*] Launching scanners in parallel:\n")
+    print("[*] Launching scanners in parallel:\n")
 
     scanner_names = [
         "dns_history",

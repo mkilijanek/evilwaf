@@ -22,10 +22,80 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.lock
           pip install coverage
 
       - name: Run tests with coverage
         run: |
           coverage run --source=core,chemistry -m unittest discover -s tests -v
           coverage report -m --fail-under=100
+
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install quality tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint (Ruff)
+        run: |
+          ruff check core chemistry evilwaf.py --select F,E9
+
+      - name: Format check (Black)
+        run: |
+          black --check core/models.py core/pipeline.py
+
+      - name: Type check (Mypy)
+        run: |
+          mypy --strict --follow-imports=skip --ignore-missing-imports core/models.py core/pipeline.py
+
+  dependency-security:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies and pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install pip-audit==2.8.0
+
+      - name: Audit Python dependencies
+        run: |
+          pip-audit -r requirements.lock
+
+  lockfile:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify requirements.lock is up to date
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-tools==7.4.1
+          pip-compile --strip-extras --resolver=backtracking --output-file requirements.lock requirements.in
+          git diff --exit-code requirements.lock

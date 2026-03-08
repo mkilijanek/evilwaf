@@ -7,6 +7,25 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "Europe/Warsaw"
+    allow:
+      - dependency-type: "all"
+    commit-message:
+      prefix: "deps(pip)"
+      include: "scope"
+    groups:
+      python-runtime:
+        patterns:
+          - "requests"
+          - "urllib3"
+          - "httpx"
+          - "cryptography"
+          - "pyOpenSSL"
+      python-protocols:
+        patterns:
+          - "h2"
+          - "hpack"
+          - "hyperframe"
+          - "aioquic"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -19,6 +38,9 @@ updates:
       day: "monday"
       time: "06:15"
       timezone: "Europe/Warsaw"
+    commit-message:
+      prefix: "deps(docker)"
+      include: "scope"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -31,6 +53,18 @@ updates:
       day: "monday"
       time: "06:30"
       timezone: "Europe/Warsaw"
+    commit-message:
+      prefix: "deps(actions)"
+      include: "scope"
+    groups:
+      gh-actions:
+        patterns:
+          - "actions/*"
+          - "docker/*"
+          - "github/*"
+          - "aquasecurity/*"
+          - "anchore/*"
+          - "sigstore/*"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"

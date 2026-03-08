@@ -16,8 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from urllib.error import URLError
+from typing import Dict, Optional, Tuple
 from urllib.request import Request, urlopen
 
 import dns.query

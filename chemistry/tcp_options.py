@@ -1,7 +1,7 @@
 from scapy.all import IP, TCP, sr1
 import random
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional, Dict, Union
+from typing import Dict, List, Optional, Tuple
 
 @dataclass
 class TCPOptionsManipulator:
