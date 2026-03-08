@@ -47,7 +47,7 @@ def _fmt_duration(seconds: float) -> str:
 def _detect_waf(target_url: str) -> Optional[str]:
     det = WAFDetector()
     try:
-        r = requests.get(target_url, timeout=10, verify=False, allow_redirects=True)
+        r = requests.get(target_url, timeout=10, allow_redirects=True)
         found = det.detect_all(
             response_body=r.text,
             headers=dict(r.headers),
