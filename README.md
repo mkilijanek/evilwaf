@@ -34,6 +34,7 @@ python3 evilwaf.py -t https://example.com --no-tui
 python3 -m unittest discover -s tests -v
 coverage run --source=core,chemistry -m unittest discover -s tests -v
 coverage report -m --fail-under=100
+python3 benchmarks/proxy_benchmark.py --proxy http://127.0.0.1:8080 --target http://127.0.0.1:18080
 ```
 
 Quality/security checks run in CI:
@@ -41,6 +42,7 @@ Quality/security checks run in CI:
 - Black formatting check (selected modules)
 - Mypy strict check (selected modules)
 - `pip-audit` on locked dependencies
+- performance budget checks (`.github/workflows/performance.yml`)
 
 ## Architecture (High Level)
 1. Client connects to local proxy.

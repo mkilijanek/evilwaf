@@ -11,9 +11,10 @@ import ssl
 import tempfile
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from cryptography import x509
@@ -986,6 +987,7 @@ class Interceptor:
         override_ip: Optional[str] = None,
         target_host: Optional[str] = None,
         upstream_proxies: Optional[List[str]] = None,
+        record_limit: int = 20000,
     ):
         self._host = listen_host
         self._port = listen_port
@@ -993,7 +995,7 @@ class Interceptor:
         self._running = False
         self._server: Optional[ThreadedHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
-        self._records: List[ProxyRecord] = []
+        self._records: Deque[ProxyRecord] = deque(maxlen=max(1000, record_limit))
         self._records_lock = threading.Lock()
 
         self._proxy_rotator = ProxyRotator(proxy_urls=upstream_proxies) if upstream_proxies else None
@@ -1340,6 +1342,7 @@ def create_interceptor(
     override_ip: Optional[str] = None,
     target_host: Optional[str] = None,
     upstream_proxies: Optional[List[str]] = None,
+    record_limit: int = 20000,
 ) -> Interceptor:
     return Interceptor(
         listen_host=listen_host,
@@ -1351,5 +1354,6 @@ def create_interceptor(
         override_ip=override_ip,
         target_host=target_host,
         upstream_proxies=upstream_proxies,
+        record_limit=record_limit,
     )    
     

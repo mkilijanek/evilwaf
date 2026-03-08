@@ -14,11 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added release smoke workflow (`.github/workflows/release-image-smoke.yml`) to validate Docker build and Trivy scan on PRs and manual runs.
 - Added `SECURITY.md` with vulnerability reporting and response targets.
 - Added optimization roadmap document: `docs/OPTIMIZATION_PLAN.md`.
+- Added performance workflow (`.github/workflows/performance.yml`) with benchmark budgets and artifacts.
+- Added benchmark and budget tooling (`benchmarks/proxy_benchmark.py`, `benchmarks/check_budgets.py`, `benchmarks/perf_budgets.json`).
+- Added profiling scripts (`scripts/profile_cpu.sh`, `scripts/profile_memory.sh`).
+- Added project execution plan (`docs/DEVELOPMENT_PLAN.md`).
 
 ### Changed
 - Expanded CI type-checking scope to include `core/interceptor.py` and `chemistry/*` modules (with practical import handling).
 - Removed CodeQL-wide query exclusion for `py/insecure-protocol`; scanning now relies on code-level mitigations and review.
 - Updated release pipeline with pinned actions and hardened reproducibility practices.
+- Bounded in-memory proxy record retention via `record_limit` in interceptor factory and runtime.
 
 ### Security
 - Enforced immutable action references (SHA-pinned `uses:`) across CI, CodeQL, and release workflows.
