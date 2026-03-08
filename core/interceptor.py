@@ -33,8 +33,8 @@ try:
     import h2.events
     import h2.exceptions
     H2_AVAILABLE = True
-except ImportError:
-    H2_AVAILABLE = False
+except ImportError:  # pragma: no cover - optional dependency
+    H2_AVAILABLE = False  # pragma: no cover
 
 try:
     import aioquic.quic.configuration
@@ -42,8 +42,8 @@ try:
     import aioquic.quic.events
     import asyncio
     AIOQUIC_AVAILABLE = True
-except ImportError:
-    AIOQUIC_AVAILABLE = False
+except ImportError:  # pragma: no cover - optional dependency
+    AIOQUIC_AVAILABLE = False  # pragma: no cover
 
 from chemistry.tcp_options import TCPOptionsManipulator
 from chemistry.tls_rotator import TLSFingerprinter
