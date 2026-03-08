@@ -513,7 +513,7 @@ class TLSContextFactory:
     )
 
     @classmethod
-    def client_context(cls, alpn: List[str] = None) -> ssl.SSLContext:
+    def client_context(cls, alpn: Optional[List[str]] = None) -> ssl.SSLContext:
         ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         try:
@@ -525,7 +525,12 @@ class TLSContextFactory:
         return ctx
 
     @classmethod
-    def server_context(cls, cert_path: str, key_path: str, alpn: List[str] = None) -> ssl.SSLContext:
+    def server_context(
+        cls,
+        cert_path: str,
+        key_path: str,
+        alpn: Optional[List[str]] = None,
+    ) -> ssl.SSLContext:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2

@@ -3,3 +3,4 @@ mypy==1.11.2
 pip-audit==2.8.0
 pip-tools==7.4.1
 ruff==0.6.9
+types-requests==2.32.4.20250913
