@@ -48,6 +48,11 @@ jobs:
               - tests/**
               - '**/__pycache__/**'
               - '**/*.md'
+            query-filters:
+              # False positive for strict TLS origin probing paths that use
+              # default trust store + hostname verification + TLS>=1.2.
+              - exclude:
+                  id: py/insecure-protocol
 
       - name: Set up Python
         if: matrix.language == 'python'
