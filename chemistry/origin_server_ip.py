@@ -264,14 +264,6 @@ def _resolve_hostname(hostname: str) -> Optional[str]:
         return None
 
 
-def _tls_client_context() -> ssl.SSLContext:
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.load_default_certs()
-    if hasattr(ssl, "TLSVersion"):
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    return ctx
-
-
 class IPEnricher:
     _IPINFO     = "https://ipinfo.io/{ip}/json"
     _INTERNETDB = "https://internetdb.shodan.io/{ip}"
@@ -309,7 +301,9 @@ class OriginVerifier:
 
     def verify_cert(self, ip: str) -> bool:
         try:
-            ctx = _tls_client_context()
+            ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            if hasattr(ssl, "TLSVersion"):
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             with ctx.wrap_socket(
                 socket.create_connection((ip, 443), timeout=5),
                 server_hostname=self.domain,
@@ -328,7 +322,9 @@ class OriginVerifier:
         for port, use_ssl in [(443, True), (80, False)]:
             try:
                 if use_ssl:
-                    ctx = _tls_client_context()
+                    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+                    if hasattr(ssl, "TLSVersion"):
+                        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
                     raw  = socket.create_connection((ip, port), timeout=5)
                     conn = ctx.wrap_socket(raw, server_hostname=self.domain)
                 else:
@@ -509,7 +505,9 @@ class SSLCertificateScanner:
 
     def _probe_cert_san(self, ip: str) -> bool:
         try:
-            ctx = _tls_client_context()
+            ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            if hasattr(ssl, "TLSVersion"):
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             with ctx.wrap_socket(
                 socket.create_connection((ip, 443), timeout=3),
                 server_hostname=self.domain,

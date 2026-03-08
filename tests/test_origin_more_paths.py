@@ -36,7 +36,7 @@ class OriginMorePathsTest(unittest.IsolatedAsyncioTestCase):
             def wrap_socket(self, raw, server_hostname=None):
                 return Sock()
 
-        with mock.patch.object(o, "_tls_client_context", return_value=Ctx()):
+        with mock.patch.object(o.ssl, "create_default_context", return_value=Ctx()):
             with mock.patch.object(o.socket, "create_connection", return_value=object()):
                 self.assertTrue(v.verify_cert("8.8.8.8"))
 

@@ -144,7 +144,7 @@ class FixesTest(unittest.TestCase):
 
         ctx = DummyContext()
 
-        with mock.patch.object(origin_server_ip, "_tls_client_context", return_value=ctx):
+        with mock.patch.object(origin_server_ip.ssl, "create_default_context", return_value=ctx):
             with mock.patch.object(origin_server_ip.socket, "create_connection", return_value=object()):
                 self.assertTrue(verifier.verify_http("203.0.113.8"))
 
