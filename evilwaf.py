@@ -739,6 +739,7 @@ class EvilWAFOrchestrator:
         server_ip:        Optional[str] = None,
         target_host:      Optional[str] = None,
         upstream_proxies: Optional[List[str]] = None,
+        record_limit:     int = 20000,
     ):
         self._enable_tor = enable_tor
         self._running    = False
@@ -753,6 +754,7 @@ class EvilWAFOrchestrator:
             override_ip=server_ip,
             target_host=target_host,
             upstream_proxies=upstream_proxies,
+            record_limit=record_limit,
         )
 
         self._tor_table  = TorIPTable()
@@ -846,6 +848,7 @@ def main():
             "  --upstream-proxy URL   Upstream proxy (http://, socks5://, socks4://)\n"
             "  --proxy-file FILE      File with proxy URLs for rotation\n"
             "  --no-tui               Headless mode, print traffic to stdout\n"
+            "  --record-limit         In-memory record cap (default: 20000)\n"
             "\n"
             "API Keys (optional, set as environment variables):\n"
             "  SHODAN_API_KEY         Shodan API key\n"
@@ -874,6 +877,7 @@ def main():
     parser.add_argument("--proxy-file",            type=str, default=None, metavar="FILE",
                         help="File with proxy URLs, one per line, for rotation")
     parser.add_argument("--no-tui",                action="store_true")
+    parser.add_argument("--record-limit",          type=int, default=20000)
 
     args = parser.parse_args()
 
@@ -928,6 +932,7 @@ def main():
         print(f"[*] Proxy  : {len(upstream_proxies)} upstream proxy(ies)")
 
     print(f"[*] Listen : {args.listen_host}:{args.listen_port}")
+    print(f"[*] Record limit : {max(1000, args.record_limit)}")
 
     orchestrator = EvilWAFOrchestrator(
         listen_host=args.listen_host,
@@ -939,6 +944,7 @@ def main():
         server_ip=server_ip,
         target_host=parsed.hostname,
         upstream_proxies=upstream_proxies,
+        record_limit=max(1000, args.record_limit),
     )
 
     orchestrator.start()

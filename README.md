@@ -12,6 +12,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.lock
 python3 evilwaf.py -t https://example.com --no-tui
+python3 evilwaf.py -t https://example.com --no-tui --record-limit 5000
 ```
 
 ## Core Features
@@ -43,6 +44,9 @@ Quality/security checks run in CI:
 - Mypy strict check (selected modules)
 - `pip-audit` on locked dependencies
 - performance budget checks (`.github/workflows/performance.yml`)
+
+Memory safety:
+- `--record-limit` bounds in-memory traffic records (minimum enforced value: `1000`).
 
 ## Architecture (High Level)
 1. Client connects to local proxy.
