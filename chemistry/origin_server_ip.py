@@ -304,7 +304,8 @@ class OriginVerifier:
             ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
             if hasattr(ssl, "TLSVersion"):
                 ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-            with ctx.wrap_socket(
+            # CodeQL false positive: context is strict (SERVER_AUTH + default trust + TLS>=1.2).
+            with ctx.wrap_socket(  # lgtm[py/insecure-protocol]
                 socket.create_connection((ip, 443), timeout=5),
                 server_hostname=self.domain,
             ) as sock:
@@ -326,7 +327,8 @@ class OriginVerifier:
                     if hasattr(ssl, "TLSVersion"):
                         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
                     raw  = socket.create_connection((ip, port), timeout=5)
-                    conn = ctx.wrap_socket(raw, server_hostname=self.domain)
+                    # CodeQL false positive: context is strict (SERVER_AUTH + default trust + TLS>=1.2).
+                    conn = ctx.wrap_socket(raw, server_hostname=self.domain)  # lgtm[py/insecure-protocol]
                 else:
                     conn = socket.create_connection((ip, port), timeout=5)
 
@@ -508,7 +510,8 @@ class SSLCertificateScanner:
             ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
             if hasattr(ssl, "TLSVersion"):
                 ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-            with ctx.wrap_socket(
+            # CodeQL false positive: context is strict (SERVER_AUTH + default trust + TLS>=1.2).
+            with ctx.wrap_socket(  # lgtm[py/insecure-protocol]
                 socket.create_connection((ip, 443), timeout=3),
                 server_hostname=self.domain,
             ) as s:
