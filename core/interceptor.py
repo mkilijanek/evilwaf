@@ -4,7 +4,6 @@ import contextlib
 import datetime
 import gzip
 import ipaddress
-import json
 import os
 import re
 import select
@@ -13,10 +12,10 @@ import ssl
 import tempfile
 import threading
 import time
-from collections import deque
+from collections import deque as _deque
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from cryptography import x509
@@ -47,6 +46,7 @@ from chemistry.tor_rotator import TorRotator
 from chemistry.proxy_rotator import ProxyRotator
 from core.models import AdvisorDecision, InterceptedRequest, InterceptedResponse, ProxyRecord
 from core.pipeline import Forwarder, Magic, ResponseAdvisor
+from core.record_store import RecordStore
 
 __all__ = [
     "AdvisorDecision",
@@ -66,6 +66,9 @@ __all__ = [
     "Interceptor",
     "create_interceptor",
 ]
+
+# Backward-compatible export used by legacy tests.
+deque = _deque
 
 
 class CertificateAuthority:
@@ -1007,22 +1010,23 @@ class Interceptor:
         self._running = False
         self._server: Optional[ThreadedHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
-        self._records: Deque[ProxyRecord] = deque(maxlen=max(1000, record_limit))
-        self._records_lock = threading.Lock()
-        self._metrics_lock = threading.Lock()
-        self._started_at = time.time()
-        self._total_records = 0
-        self._total_passed = 0
-        self._total_blocked = 0
-        self._record_spool_path = record_spool_path
-        self._record_spool_max_bytes = max(1024, record_spool_max_bytes)
-        self._record_spool_lock = threading.Lock()
-        self._record_spool_fp = None
-        if self._record_spool_path:
-            spool_dir = os.path.dirname(self._record_spool_path)
-            if spool_dir:
-                os.makedirs(spool_dir, exist_ok=True)
-            self._record_spool_fp = open(self._record_spool_path, "a", encoding="utf-8")
+        self._record_store = RecordStore(
+            record_limit=record_limit,
+            spool_path=record_spool_path,
+            spool_max_bytes=record_spool_max_bytes,
+        )
+        # Compatibility aliases for existing tests and callbacks.
+        self._records = self._record_store.buffer
+        self._records_lock = self._record_store.buffer_lock
+        self._record_spool_path = self._record_store.spool_path
+        self._record_spool_max_bytes = self._record_store.spool_max_bytes
+        self._record_spool_lock = self._record_store.spool_lock
+        self._record_spool_fp = self._record_store.spool_fp
+        self._metrics_lock = self._record_store.metrics_lock
+        self._started_at = self._record_store.started_at
+        self._total_records = self._record_store.total_records
+        self._total_passed = self._record_store.total_passed
+        self._total_blocked = self._record_store.total_blocked
 
         self._proxy_rotator = ProxyRotator(proxy_urls=upstream_proxies) if upstream_proxies else None
 
@@ -1144,10 +1148,15 @@ class Interceptor:
             pass
 
     def get_records(self) -> List[ProxyRecord]:
+        if hasattr(self, "_record_store"):
+            return self._record_store.get_records()
         with self._records_lock:
             return list(self._records)
 
     def clear_records(self):
+        if hasattr(self, "_record_store"):
+            self._record_store.clear()
+            return
         with self._records_lock:
             self._records.clear()
 
@@ -1156,38 +1165,23 @@ class Interceptor:
 
     @staticmethod
     def _serialize_record(record: ProxyRecord) -> Dict[str, Any]:
-        return {
-            "timestamp": record.request.timestamp,
-            "method": record.request.method,
-            "host": record.request.host,
-            "path": record.request.path,
-            "status_code": record.response.status_code,
-            "passed": record.passed,
-            "blocked": record.blocked,
-            "technique": record.technique_applied,
-            "is_https": record.request.is_https,
-            "response_time": record.response.response_time,
-        }
+        return RecordStore.serialize_record(record)
 
     def _spill_record(self, record: ProxyRecord):
-        fp = getattr(self, "_record_spool_fp", None)
-        if not fp:
+        if hasattr(self, "_record_store"):
+            self._record_store.spill_record(record)
+            self._record_spool_fp = self._record_store.spool_fp
             return
-        payload = json.dumps(self._serialize_record(record), separators=(",", ":"))
-        lock = getattr(self, "_record_spool_lock", None)
-        if lock:
-            with lock:
-                self._rotate_spool_if_needed_unlocked()
-                fp = self._record_spool_fp
-                fp.write(payload + "\n")
-                fp.flush()
-        else:
-            self._rotate_spool_if_needed_unlocked()
-            fp = self._record_spool_fp
-            fp.write(payload + "\n")
+        fp = getattr(self, "_record_spool_fp", None)
+        if fp:
+            fp.write(str(self._serialize_record(record)) + "\n")
             fp.flush()
 
     def _rotate_spool_if_needed_unlocked(self):
+        if hasattr(self, "_record_store"):
+            self._record_store._rotate_spool_if_needed_unlocked()
+            self._record_spool_fp = self._record_store.spool_fp
+            return
         spool_path = getattr(self, "_record_spool_path", None)
         if not spool_path:
             return
@@ -1217,83 +1211,29 @@ class Interceptor:
         self._record_spool_fp = open(spool_path, "a", encoding="utf-8")
 
     def get_spooled_records(self, limit: int = 200) -> List[Dict[str, Any]]:
-        if not self._record_spool_path:
-            return []
-        entries: List[Dict[str, Any]] = []
-        paths = [f"{self._record_spool_path}.1.gz", self._record_spool_path]
-        for path in paths:
-            if not os.path.exists(path):
-                continue
-            try:
-                if path.endswith(".gz"):
-                    opener = gzip.open
-                else:
-                    opener = open
-                with opener(path, "rt", encoding="utf-8", errors="ignore") as f:
-                    for ln in f:
-                        ln = ln.strip()
-                        if not ln:
-                            continue
-                        try:
-                            entries.append(json.loads(ln))
-                        except Exception:
-                            continue
-            except Exception:
-                continue
-        return entries[-max(1, limit):]
+        if hasattr(self, "_record_store"):
+            return self._record_store.get_spooled_records(limit=limit)
+        return []
 
     def get_metrics(self) -> Dict[str, Any]:
-        now = time.time()
-        uptime = max(0.001, now - self._started_at)
-        with self._metrics_lock:
-            total = self._total_records
-            passed = self._total_passed
-            blocked = self._total_blocked
-        with self._records_lock:
-            in_memory = len(self._records)
-            memory_cap = self._records.maxlen or 0
-        spool_size = 0
-        if self._record_spool_path and os.path.exists(self._record_spool_path):
-            with contextlib.suppress(OSError):
-                spool_size = os.path.getsize(self._record_spool_path)
-        return {
-            "uptime_seconds": uptime,
-            "total_records": total,
-            "passed_records": passed,
-            "blocked_records": blocked,
-            "pass_rate": (passed / total) if total else 0.0,
-            "block_rate": (blocked / total) if total else 0.0,
-            "records_per_second": (total / uptime),
-            "in_memory_records": in_memory,
-            "in_memory_capacity": memory_cap,
-            "spool_file": self._record_spool_path,
-            "spool_size_bytes": spool_size,
-        }
+        if hasattr(self, "_record_store"):
+            return self._record_store.get_metrics()
+        return {}
 
     def _append_record(self, record: ProxyRecord):
-        metrics_lock = getattr(self, "_metrics_lock", None)
-        if metrics_lock:
-            with metrics_lock:
-                self._total_records += 1
-                if record.passed:
-                    self._total_passed += 1
-                if record.blocked:
-                    self._total_blocked += 1
-
-        lock = getattr(self, "_records_lock", None)
+        if hasattr(self, "_record_store"):
+            self._record_store.append(record)
+            self._record_spool_fp = self._record_store.spool_fp
+            return
         records = getattr(self, "_records", None)
         if records is None:
             return
-        maxlen = getattr(records, "maxlen", None)
+        lock = getattr(self, "_records_lock", None)
         if lock:
             with lock:
-                if maxlen and len(records) >= maxlen:
-                    self._spill_record(records[0])
                 records.append(record)
-            return
-        if maxlen and len(records) >= maxlen:
-            self._spill_record(records[0])
-        records.append(record)
+        else:
+            records.append(record)
 
     def start(self):
         self._running = True
@@ -1490,15 +1430,19 @@ class Interceptor:
         if self._server:
             self._server.shutdown()
             self._server.server_close()
-        spool_fp = getattr(self, "_record_spool_fp", None)
-        spool_lock = getattr(self, "_record_spool_lock", None)
-        if spool_fp:
-            if spool_lock:
-                with spool_lock:
+        if hasattr(self, "_record_store"):
+            self._record_store.close()
+            self._record_spool_fp = self._record_store.spool_fp
+        else:
+            spool_fp = getattr(self, "_record_spool_fp", None)
+            spool_lock = getattr(self, "_record_spool_lock", None)
+            if spool_fp:
+                if spool_lock:
+                    with spool_lock:
+                        spool_fp.close()
+                else:
                     spool_fp.close()
-            else:
-                spool_fp.close()
-            self._record_spool_fp = None
+                self._record_spool_fp = None
         self.ca.cleanup()
 
     def is_running(self) -> bool:

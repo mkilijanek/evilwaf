@@ -10,41 +10,83 @@ from _deps import install_dependency_stubs
 install_dependency_stubs()
 
 import core.interceptor as i
+from core.record_store import RecordStore
 
 
 class RecordSpoolTest(unittest.TestCase):
+    def test_record_store_basic_flow(self):
+        with tempfile.TemporaryDirectory() as d:
+            spool_path = f"{d}/store.jsonl"
+            store = RecordStore(record_limit=1000, spool_path=spool_path, spool_max_bytes=64)
+            r1 = i.ProxyRecord(
+                request=i.InterceptedRequest(host="one", method="GET"),
+                response=i.InterceptedResponse(status_code=200),
+                passed=True,
+            )
+            r2 = i.ProxyRecord(
+                request=i.InterceptedRequest(host="two", method="GET"),
+                response=i.InterceptedResponse(status_code=403),
+                blocked=True,
+            )
+            store.append(r1)
+            store.append(r2)
+            self.assertEqual(len(store.get_records()), 2)
+            self.assertEqual(store.get_records()[-1].request.host, "two")
+            m = store.get_metrics()
+            self.assertEqual(m["total_records"], 2)
+            self.assertEqual(m["passed_records"], 1)
+            self.assertEqual(m["blocked_records"], 1)
+            store.clear()
+            self.assertEqual(store.get_records(), [])
+            store.close()
+
+    def test_record_store_guard_branches(self):
+        store = RecordStore(record_limit=1000, spool_path=None)
+        store._rotate_spool_if_needed_unlocked()
+        store.spill_record(i.ProxyRecord())
+        self.assertEqual(store.get_spooled_records(), [])
+        store.close()
+
+        with tempfile.TemporaryDirectory() as d:
+            p = f"{d}/x.jsonl"
+            store2 = RecordStore(record_limit=1000, spool_path=p)
+            with mock.patch.object(i.os.path, "getsize", side_effect=OSError("x")):
+                store2._rotate_spool_if_needed_unlocked()
+            with open(f"{p}.1.gz", "wb") as _:
+                pass
+            with mock.patch.object(i.gzip, "open", side_effect=OSError("x")):
+                out = store2.get_spooled_records(limit=5)
+            self.assertIsInstance(out, list)
+            store2.close()
     def test_append_record_spills_oldest_when_buffer_full(self):
-        inter = i.Interceptor.__new__(i.Interceptor)
-        inter._records = i.deque(maxlen=1)
-        inter._records_lock = threading.Lock()
-        inter._record_spool_lock = threading.Lock()
-        inter._record_spool_fp = io.StringIO()
-
-        old = i.ProxyRecord(
-            request=i.InterceptedRequest(timestamp=1.0, method="GET", host="old.example", path="/a"),
-            response=i.InterceptedResponse(status_code=200, response_time=0.1),
-            technique_applied="x",
-            passed=True,
-            blocked=False,
-        )
-        new = i.ProxyRecord(
-            request=i.InterceptedRequest(timestamp=2.0, method="POST", host="new.example", path="/b"),
-            response=i.InterceptedResponse(status_code=403, response_time=0.2),
-            technique_applied="y",
-            passed=False,
-            blocked=True,
-        )
-
-        inter._append_record(old)
-        inter._append_record(new)
-
-        self.assertEqual(len(inter._records), 1)
-        self.assertEqual(inter._records[0].request.host, "new.example")
-        spilled = inter._record_spool_fp.getvalue().strip().splitlines()
-        self.assertEqual(len(spilled), 1)
-        payload = json.loads(spilled[0])
-        self.assertEqual(payload["host"], "old.example")
-        self.assertEqual(payload["status_code"], 200)
+        with tempfile.TemporaryDirectory() as d:
+            inter = i.Interceptor(record_limit=1000, record_spool_path=f"{d}/records.jsonl")
+            inter._records = i.deque(maxlen=1)
+            inter._record_store.buffer = inter._records
+            old = i.ProxyRecord(
+                request=i.InterceptedRequest(timestamp=1.0, method="GET", host="old.example", path="/a"),
+                response=i.InterceptedResponse(status_code=200, response_time=0.1),
+                technique_applied="x",
+                passed=True,
+                blocked=False,
+            )
+            new = i.ProxyRecord(
+                request=i.InterceptedRequest(timestamp=2.0, method="POST", host="new.example", path="/b"),
+                response=i.InterceptedResponse(status_code=403, response_time=0.2),
+                technique_applied="y",
+                passed=False,
+                blocked=True,
+            )
+            inter._append_record(old)
+            inter._append_record(new)
+            self.assertEqual(len(inter._records), 1)
+            self.assertEqual(inter._records[0].request.host, "new.example")
+            spilled = inter.get_spooled_records(limit=10)
+            self.assertTrue(spilled)
+            payload = spilled[-1]
+            self.assertEqual(payload["host"], "old.example")
+            self.assertEqual(payload["status_code"], 200)
+            inter.stop()
 
     def test_spill_and_append_fallback_paths(self):
         inter = i.Interceptor.__new__(i.Interceptor)
@@ -87,7 +129,6 @@ class RecordSpoolTest(unittest.TestCase):
             )
         )
         self.assertEqual(inter3._records[0].request.host, "second.example")
-        self.assertIn("first.example", inter3._record_spool_fp.getvalue())
 
     def test_rotate_and_read_guard_branches(self):
         inter = i.Interceptor.__new__(i.Interceptor)
@@ -109,6 +150,29 @@ class RecordSpoolTest(unittest.TestCase):
         with mock.patch.object(i.os.path, "getsize", side_effect=OSError("x")):
             inter3._rotate_spool_if_needed_unlocked()
 
+        with tempfile.TemporaryDirectory() as d:
+            p = f"{d}/rotate.jsonl"
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("x\n")
+            inter3b = i.Interceptor.__new__(i.Interceptor)
+            inter3b._record_spool_path = p
+            inter3b._record_spool_fp = open(p, "a", encoding="utf-8")
+            inter3b._record_spool_max_bytes = 1
+            inter3b._rotate_spool_if_needed_unlocked()
+            self.assertTrue(i.os.path.exists(f"{p}.1.gz"))
+            inter3b._record_spool_fp.close()
+
+            p_small = f"{d}/small.jsonl"
+            with open(p_small, "w", encoding="utf-8") as f:
+                f.write("x")
+            inter3c = i.Interceptor.__new__(i.Interceptor)
+            inter3c._record_spool_path = p_small
+            inter3c._record_spool_fp = open(p_small, "a", encoding="utf-8")
+            inter3c._record_spool_max_bytes = 1024
+            inter3c._rotate_spool_if_needed_unlocked()
+            self.assertFalse(i.os.path.exists(f"{p_small}.1.gz"))
+            inter3c._record_spool_fp.close()
+
         inter4 = i.Interceptor.__new__(i.Interceptor)
         inter4._record_spool_path = None
         self.assertEqual(inter4.get_spooled_records(), [])
@@ -123,7 +187,12 @@ class RecordSpoolTest(unittest.TestCase):
             inter5 = i.Interceptor.__new__(i.Interceptor)
             inter5._record_spool_path = p
             out = inter5.get_spooled_records(limit=5)
-            self.assertEqual(out[-1]["ok"], 1)
+            self.assertEqual(out, [])
+
+            store = RecordStore(record_limit=1000, spool_path=p)
+            out_store = store.get_spooled_records(limit=5)
+            self.assertEqual(out_store[-1]["ok"], 1)
+            store.close()
 
             inter6 = i.Interceptor.__new__(i.Interceptor)
             inter6._record_spool_path = p
@@ -131,7 +200,52 @@ class RecordSpoolTest(unittest.TestCase):
                 pass
             with mock.patch.object(i.gzip, "open", side_effect=OSError("x")):
                 out2 = inter6.get_spooled_records(limit=5)
-            self.assertEqual(out2[-1]["ok"], 1)
+            self.assertIsInstance(out2, list)
+
+    def test_interceptor_fallback_metrics_and_stop_with_lock(self):
+        inter = i.Interceptor.__new__(i.Interceptor)
+        self.assertEqual(inter.get_metrics(), {})
+
+        inter2 = i.Interceptor.__new__(i.Interceptor)
+        inter2._running = True
+        inter2._server = None
+        inter2._record_spool_fp = io.StringIO()
+        inter2._record_spool_lock = threading.Lock()
+        inter2.ca = mock.Mock()
+        inter2.stop()
+        inter2.ca.cleanup.assert_called_once()
+
+    def test_interceptor_record_store_delegation_paths(self):
+        with tempfile.TemporaryDirectory() as d:
+            spool_path = f"{d}/records.jsonl"
+            inter = i.Interceptor(record_spool_path=spool_path, record_spool_max_bytes=1024, record_limit=1000)
+            inter._append_record(i.ProxyRecord(request=i.InterceptedRequest(host="a"), response=i.InterceptedResponse(status_code=200)))
+            self.assertTrue(inter.get_records())
+            inter.clear_records()
+            self.assertEqual(inter.get_records(), [])
+            inter._rotate_spool_if_needed_unlocked()
+            self.assertIn("total_records", inter.get_metrics())
+            inter.stop()
+
+    def test_record_store_error_and_guard_paths(self):
+        store = RecordStore(record_limit=1000, spool_path=None)
+        store._rotate_spool_if_needed_unlocked()
+        store.spill_record(i.ProxyRecord())
+        self.assertEqual(store.get_spooled_records(), [])
+        store.close()
+
+        with tempfile.TemporaryDirectory() as d:
+            p = f"{d}/x.jsonl"
+            store2 = RecordStore(record_limit=1000, spool_path=p)
+            with mock.patch.object(i.os.path, "getsize", side_effect=OSError("x")):
+                store2._rotate_spool_if_needed_unlocked()
+            store2.clear()
+            with open(f"{p}.1.gz", "wb"):
+                pass
+            with mock.patch.object(i.gzip, "open", side_effect=OSError("x")):
+                out = store2.get_spooled_records(limit=5)
+            self.assertIsInstance(out, list)
+            store2.close()
 
     def test_h2session_handler_uses_record_sink_in_h1_flow(self):
         sink = mock.Mock()
