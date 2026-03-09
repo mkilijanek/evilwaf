@@ -17,6 +17,14 @@ Keep new logic in `core/` or `chemistry/` modules, and keep `evilwaf.py` focused
 - `python3 -m unittest discover -s tests -v`: run unit tests.
 - `python3 -m py_compile evilwaf.py core/*.py chemistry/*.py`: quick syntax validation.
 
+## Local Environment Rules
+- Use the repository virtualenv for all Python commands: `source .venv/bin/activate`.
+- Do not run `sudo pip ...` or `sudo python ...`; install Python packages inside `.venv`.
+- Use `sudo` only for host-level operations (for example system package install, service control, Docker daemon access) when non-privileged commands fail.
+- Before commits, verify environment and tests from the same shell session:
+  - `which python`
+  - `python -m unittest discover -s tests -q`
+
 ## Coding Style & Naming Conventions
 - Language: Python 3, 4-space indentation, UTF-8 files.
 - Naming: `snake_case` for functions/variables, `PascalCase` for classes, `UPPER_CASE` for constants.
@@ -32,6 +40,12 @@ Keep new logic in `core/` or `chemistry/` modules, and keep `evilwaf.py` focused
 ## Commit & Pull Request Guidelines
 - Commit style in history is concise, imperative, and scoped (e.g., `Fix override IP and TOR rotation wiring; add regression tests`).
 - Keep commits focused; avoid mixing feature work and unrelated cleanup.
+- Push flow:
+  - `git fetch origin && git rebase origin/<branch>`
+  - `git push origin <branch>`
+- For Issues/PRs with GitHub CLI, prefer single-line commands (avoid multiline `\` continuations that can break escaping in shells/CI logs).
+  - Issue example: `gh issue create -t "Short title" -b "Context, impact, repro steps" -l bug`
+  - PR example: `gh pr create -B main -H dev -t "Title" -b "Scope, tests, risks"`
 - PRs should include:
   - What changed and why.
   - Risk/impact notes (networking, TLS, TOR, proxy behavior).
