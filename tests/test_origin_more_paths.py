@@ -1,5 +1,4 @@
 import json
-import socket
 import unittest
 from unittest import mock
 
@@ -107,6 +106,9 @@ class OriginMorePathsTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(fav._fetch_favicon("/favicon.ico"), b"abc")
         with mock.patch.object(o, "urlopen", side_effect=Exception("x")):
             self.assertIsNone(fav._fetch_favicon("/favicon.ico"))
+        self.assertIsInstance(fav._mmh3_hash(b"a"), int)
+        self.assertIsInstance(fav._mmh3_hash(b"ab"), int)
+        self.assertIsInstance(fav._mmh3_hash(b"abc"), int)
 
         with mock.patch.object(o, "SHODAN_API_KEY", "k"):
             with mock.patch.object(o, "_fetch_url", return_value="not json"):

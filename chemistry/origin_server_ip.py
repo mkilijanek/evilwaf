@@ -930,18 +930,22 @@ class FaviconHashScanner:
             h = (((h << 13) | (h >> 19)) & 0xFFFFFFFF)
             h = ((h * 5 + 0xE6546B64) & 0xFFFFFFFF)
         tail_idx = nblocks * 4
-        k, tail  = 0, length & 3
-        if tail >= 3: k ^= data[tail_idx + 2] << 16
-        if tail >= 2: k ^= data[tail_idx + 1] << 8
+        k, tail = 0, length & 3
+        if tail >= 3:
+            k ^= data[tail_idx + 2] << 16
+        if tail >= 2:
+            k ^= data[tail_idx + 1] << 8
         if tail >= 1:
             k ^= data[tail_idx]
-            k  = ((k * 0xCC9E2D51) & 0xFFFFFFFF)
-            k  = (((k << 15) | (k >> 17)) & 0xFFFFFFFF)
-            k  = ((k * 0x1B873593) & 0xFFFFFFFF)
+            k = ((k * 0xCC9E2D51) & 0xFFFFFFFF)
+            k = (((k << 15) | (k >> 17)) & 0xFFFFFFFF)
+            k = ((k * 0x1B873593) & 0xFFFFFFFF)
             h ^= k
         h ^= length
-        h ^= h >> 16; h = ((h * 0x85EBCA6B) & 0xFFFFFFFF)
-        h ^= h >> 13; h = ((h * 0xC2B2AE35) & 0xFFFFFFFF)
+        h ^= h >> 16
+        h = ((h * 0x85EBCA6B) & 0xFFFFFFFF)
+        h ^= h >> 13
+        h = ((h * 0xC2B2AE35) & 0xFFFFFFFF)
         h ^= h >> 16
         return h if h <= 0x7FFFFFFF else h - 0x100000000
 

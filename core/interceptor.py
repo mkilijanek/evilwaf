@@ -599,14 +599,18 @@ class MITMHandshaker:
             result["error"] = f"SSL: {e}"
             for s in [client_tls, server_raw]:
                 if s:
-                    try: s.close()
-                    except Exception: pass
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
         except Exception as e:
             result["error"] = str(e)
             for s in [client_tls, server_raw]:
                 if s:
-                    try: s.close()
-                    except Exception: pass
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
 
         return result
 
