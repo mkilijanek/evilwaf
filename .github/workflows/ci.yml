@@ -110,7 +110,7 @@ jobs:
 
       - name: Verify requirements.lock is up to date
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade "pip<26"
           pip install pip-tools==7.4.1
           pip-compile --strip-extras --resolver=backtracking --output-file requirements.lock requirements.in
           git diff --exit-code requirements.lock
