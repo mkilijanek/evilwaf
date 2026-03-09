@@ -102,7 +102,7 @@ class ChemistryModulesTest(unittest.TestCase):
 
         r._proxies = []
         with mock.patch.object(p.socket, "create_connection", return_value=mock.Mock()) as cc:
-            out = p.ProxyRotator.create_connection(r, "example.com", 80)
+            p.ProxyRotator.create_connection(r, "example.com", 80)
             self.assertTrue(cc.called)
         self.assertEqual(p.ProxyRotator.get_proxy_dict(r), {})
         self.assertIn("proxies", p.ProxyRotator.per_request_proxy(r))

@@ -105,6 +105,7 @@ class InterceptorH2Test(unittest.TestCase):
 
         callbacks = {"record": mock.Mock(), "request": None, "response": None}
         records = []
+        sink = mock.Mock()
         handler = i.H2SessionHandler(
             client_tls=mock.Mock(),
             server_tls=mock.Mock(),
@@ -117,6 +118,7 @@ class InterceptorH2Test(unittest.TestCase):
             records_list=records,
             records_lock=threading.Lock(),
             is_waf_block=lambda code: code == 403,
+            record_sink=sink,
         )
 
         with mock.patch("core.interceptor.h2", fake_h2, create=True):
@@ -128,6 +130,7 @@ class InterceptorH2Test(unittest.TestCase):
 
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0].response.status_code, 200)
+        sink.assert_called_once()
 
     def test_handle_h1_to_h1_and_retry(self):
         callbacks = {"record": mock.Mock(), "request": mock.Mock(), "response": mock.Mock()}

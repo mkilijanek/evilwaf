@@ -64,7 +64,7 @@ def _hunt_origin_ip_verbose(target: str) -> Optional[str]:
     domain = parsed.hostname or parsed.netloc
 
     print(f"\n[*] Origin IP Hunter started for: {domain}")
-    print(f"[*] Launching scanners in parallel:\n")
+    print("[*] Launching scanners in parallel:\n")
 
     scanner_names = [
         "dns_history",
@@ -739,6 +739,9 @@ class EvilWAFOrchestrator:
         server_ip:        Optional[str] = None,
         target_host:      Optional[str] = None,
         upstream_proxies: Optional[List[str]] = None,
+        record_limit:     int = 20000,
+        record_spool_file: Optional[str] = None,
+        record_spool_max_mb: int = 50,
     ):
         self._enable_tor = enable_tor
         self._running    = False
@@ -753,6 +756,9 @@ class EvilWAFOrchestrator:
             override_ip=server_ip,
             target_host=target_host,
             upstream_proxies=upstream_proxies,
+            record_limit=record_limit,
+            record_spool_path=record_spool_file,
+            record_spool_max_bytes=max(1, record_spool_max_mb) * 1024 * 1024,
         )
 
         self._tor_table  = TorIPTable()
@@ -846,6 +852,9 @@ def main():
             "  --upstream-proxy URL   Upstream proxy (http://, socks5://, socks4://)\n"
             "  --proxy-file FILE      File with proxy URLs for rotation\n"
             "  --no-tui               Headless mode, print traffic to stdout\n"
+            "  --record-limit         In-memory record cap (default: 20000)\n"
+            "  --record-spool-file    Optional JSONL file for evicted records\n"
+            "  --record-spool-max-mb  Rotate/compress spool file after this size (default: 50)\n"
             "\n"
             "API Keys (optional, set as environment variables):\n"
             "  SHODAN_API_KEY         Shodan API key\n"
@@ -874,6 +883,9 @@ def main():
     parser.add_argument("--proxy-file",            type=str, default=None, metavar="FILE",
                         help="File with proxy URLs, one per line, for rotation")
     parser.add_argument("--no-tui",                action="store_true")
+    parser.add_argument("--record-limit",          type=int, default=20000)
+    parser.add_argument("--record-spool-file",     type=str, default=None)
+    parser.add_argument("--record-spool-max-mb",   type=int, default=50)
 
     args = parser.parse_args()
 
@@ -928,6 +940,10 @@ def main():
         print(f"[*] Proxy  : {len(upstream_proxies)} upstream proxy(ies)")
 
     print(f"[*] Listen : {args.listen_host}:{args.listen_port}")
+    print(f"[*] Record limit : {max(1000, args.record_limit)}")
+    if args.record_spool_file:
+        print(f"[*] Record spool: {args.record_spool_file}")
+        print(f"[*] Spool rotate: {max(1, args.record_spool_max_mb)} MB")
 
     orchestrator = EvilWAFOrchestrator(
         listen_host=args.listen_host,
@@ -939,6 +955,9 @@ def main():
         server_ip=server_ip,
         target_host=parsed.hostname,
         upstream_proxies=upstream_proxies,
+        record_limit=max(1000, args.record_limit),
+        record_spool_file=args.record_spool_file,
+        record_spool_max_mb=max(1, args.record_spool_max_mb),
     )
 
     orchestrator.start()

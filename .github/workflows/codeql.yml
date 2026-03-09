@@ -32,12 +32,12 @@ jobs:
             build-mode: none
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@0d579ffd059c29b07949a3cce3983f0780820c98 # v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -48,11 +48,6 @@ jobs:
               - tests/**
               - '**/__pycache__/**'
               - '**/*.md'
-            query-filters:
-              # False positive for strict TLS origin probing paths that use
-              # default trust store + hostname verification + TLS>=1.2.
-              - exclude:
-                  id: py/insecure-protocol
 
       - name: Set up Python
         if: matrix.language == 'python'
@@ -64,9 +59,9 @@ jobs:
         if: matrix.language == 'python'
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.lock
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98 # v4
         with:
           category: /language:${{ matrix.language }}

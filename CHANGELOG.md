@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- Pinned GitHub Actions to full commit SHAs for supply-chain hardening.
+- Added release smoke workflow (`.github/workflows/release-image-smoke.yml`) to validate Docker build and Trivy scan on PRs and manual runs.
+- Added `SECURITY.md` with vulnerability reporting and response targets.
+- Added optimization roadmap document: `docs/OPTIMIZATION_PLAN.md`.
+- Added performance workflow (`.github/workflows/performance.yml`) with benchmark budgets and artifacts.
+- Added benchmark and budget tooling (`benchmarks/proxy_benchmark.py`, `benchmarks/check_budgets.py`, `benchmarks/perf_budgets.json`).
+- Added profiling scripts (`scripts/profile_cpu.sh`, `scripts/profile_memory.sh`).
+- Added project execution plan (`docs/DEVELOPMENT_PLAN.md`).
+- Added CI performance smoke budget gate in main CI workflow.
+- Added record spool payload guardrails (oversized record truncation + oversized line skip on readback).
+
+### Changed
+- Expanded CI type-checking scope to include `core/interceptor.py` and `chemistry/*` modules (with practical import handling).
+- Removed CodeQL-wide query exclusion for `py/insecure-protocol`; scanning now relies on code-level mitigations and review.
+- Updated release pipeline with pinned actions and hardened reproducibility practices.
+- Bounded in-memory proxy record retention via `record_limit` in interceptor factory and runtime.
+- Hardened `RecordStore` spill/read paths with size bounds to reduce memory pressure from malformed or oversized spool entries.
+
+### Security
+- Enforced immutable action references (SHA-pinned `uses:`) across CI, CodeQL, and release workflows.
+
+### Planned Improvements
+- Refactor scanner orchestration in `chemistry/origin_server_ip.py` to async bounded concurrency.
+- Split proxy hot path into dedicated connection/protocol/retry modules for lower latency and easier profiling.
+- Introduce bounded record storage and optional file-backed spillover to stabilize memory during long runs.
+- Add benchmark gates (latency and memory budgets) as non-regression checks in CI.
+
 ## [2.4.0] - 2026-03-05
 
 ### Added
@@ -131,20 +161,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial project release
 - Basic functionality
 - Core architecture
-
----
-
-## Unreleased
-
-### Planned Features
-- [ ] AI-powered WAF behavior analysis
-- [ ] Machine learning TLS/TCP profile generation
-- [ ] Real-time threat intelligence integration
-- [ ] Advanced behavioral timing analysis
-- [ ] Plugin system for custom scanner modules
-- [ ] GUI interface option
-- [ ] Cloud deployment support
-- [ ] Windows platform support
 
 ---
 

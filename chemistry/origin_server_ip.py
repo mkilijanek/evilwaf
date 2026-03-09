@@ -16,8 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from urllib.error import URLError
+from typing import Dict, Optional, Tuple
 from urllib.request import Request, urlopen
 
 import dns.query
@@ -931,18 +930,22 @@ class FaviconHashScanner:
             h = (((h << 13) | (h >> 19)) & 0xFFFFFFFF)
             h = ((h * 5 + 0xE6546B64) & 0xFFFFFFFF)
         tail_idx = nblocks * 4
-        k, tail  = 0, length & 3
-        if tail >= 3: k ^= data[tail_idx + 2] << 16
-        if tail >= 2: k ^= data[tail_idx + 1] << 8
+        k, tail = 0, length & 3
+        if tail >= 3:
+            k ^= data[tail_idx + 2] << 16
+        if tail >= 2:
+            k ^= data[tail_idx + 1] << 8
         if tail >= 1:
             k ^= data[tail_idx]
-            k  = ((k * 0xCC9E2D51) & 0xFFFFFFFF)
-            k  = (((k << 15) | (k >> 17)) & 0xFFFFFFFF)
-            k  = ((k * 0x1B873593) & 0xFFFFFFFF)
+            k = ((k * 0xCC9E2D51) & 0xFFFFFFFF)
+            k = (((k << 15) | (k >> 17)) & 0xFFFFFFFF)
+            k = ((k * 0x1B873593) & 0xFFFFFFFF)
             h ^= k
         h ^= length
-        h ^= h >> 16; h = ((h * 0x85EBCA6B) & 0xFFFFFFFF)
-        h ^= h >> 13; h = ((h * 0xC2B2AE35) & 0xFFFFFFFF)
+        h ^= h >> 16
+        h = ((h * 0x85EBCA6B) & 0xFFFFFFFF)
+        h ^= h >> 13
+        h = ((h * 0xC2B2AE35) & 0xFFFFFFFF)
         h ^= h >> 16
         return h if h <= 0x7FFFFFFF else h - 0x100000000
 
@@ -1165,12 +1168,16 @@ class OriginServerIPHunter:
         enrich: bool = True,
         extra_waf_ranges: Optional[list[str]] = None,
         manual_ip: Optional[str] = None,
+        scanner_concurrency: int = 4,
+        scanner_timeout: float = 90.0,
     ):
         self.domain            = domain.lower().strip()
         self._verify           = verify
         self._enrich           = enrich
         self._extra_waf_ranges = extra_waf_ranges or []
         self._manual_ip        = manual_ip
+        self._scanner_concurrency = max(1, scanner_concurrency)
+        self._scanner_timeout = max(5.0, scanner_timeout)
         self._report           = ReconReport(target=self.domain)
         self._verifier         = OriginVerifier(self.domain)
         self._enricher         = IPEnricher()
@@ -1221,11 +1228,17 @@ class OriginServerIPHunter:
         self._report.waf_vendor = vendor
         self._report.waf_names  = names
 
+        sem = asyncio.Semaphore(self._scanner_concurrency)
+
         async def run_scanner(scanner):
             try:
-                results = await scanner.scan()
+                async with sem:
+                    results = await asyncio.wait_for(
+                        scanner.scan(),
+                        timeout=self._scanner_timeout,
+                    )
                 await self._correlator.feed(results, self._report)
-            except Exception:
+            except (asyncio.TimeoutError, Exception):
                 pass
 
         await asyncio.gather(*[run_scanner(s) for s in self._scanners])
