@@ -3,6 +3,7 @@ import json
 import tempfile
 import threading
 import unittest
+import gzip
 from unittest import mock
 
 from _deps import install_dependency_stubs
@@ -270,6 +271,13 @@ class RecordSpoolTest(unittest.TestCase):
             rows = store.get_spooled_records(limit=10)
             self.assertTrue(any(r.get("ok") == 1 for r in rows))
             self.assertFalse(any("huge" in r for r in rows))
+            with gzip.open(f"{p}.1.gz", "wt", encoding="utf-8") as gz:
+                gz.write("\n")
+                gz.write('{"huge":"' + ("c" * 3000) + '"}\n')
+                gz.write('{"ok_gz":2}\n')
+            rows2 = store.get_spooled_records(limit=20)
+            self.assertTrue(any(r.get("ok_gz") == 2 for r in rows2))
+            self.assertFalse(any("huge" in r for r in rows2))
             store.close()
 
     def test_h2session_handler_uses_record_sink_in_h1_flow(self):

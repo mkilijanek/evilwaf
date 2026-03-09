@@ -132,16 +132,26 @@ class RecordStore:
             if not os.path.exists(path):
                 continue
             try:
-                opener = gzip.open if path.endswith(".gz") else open
-                with opener(path, "rt", encoding="utf-8", errors="ignore") as f:
-                    for ln in f:
-                        ln = ln.strip()
-                        if not ln:
-                            continue
-                        if len(ln.encode("utf-8")) > self.spool_read_max_line_bytes:
-                            continue
-                        with contextlib.suppress(Exception):
-                            entries.append(json.loads(ln))
+                if path.endswith(".gz"):
+                    with gzip.open(path, "rt", encoding="utf-8", errors="ignore") as f:
+                        for ln in f:
+                            ln = ln.strip()
+                            if not ln:
+                                continue
+                            if len(ln.encode("utf-8")) > self.spool_read_max_line_bytes:
+                                continue
+                            with contextlib.suppress(Exception):
+                                entries.append(json.loads(ln))
+                else:
+                    with open(path, "rt", encoding="utf-8", errors="ignore") as f:
+                        for ln in f:
+                            ln = ln.strip()
+                            if not ln:
+                                continue
+                            if len(ln.encode("utf-8")) > self.spool_read_max_line_bytes:
+                                continue
+                            with contextlib.suppress(Exception):
+                                entries.append(json.loads(ln))
             except Exception:
                 continue
         return entries[-max(1, limit):]
