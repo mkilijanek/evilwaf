@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 
 
-def _parse_result(path: Path) -> dict:
-    out = {}
+def _parse_result(path: Path) -> dict[str, float]:
+    out: dict[str, float] = {}
     for line in path.read_text().splitlines():
         if "=" not in line:
             continue

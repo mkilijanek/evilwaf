@@ -58,6 +58,7 @@ jobs:
       - name: Type check (Mypy)
         run: |
           mypy --strict --follow-imports=skip --ignore-missing-imports core/models.py core/pipeline.py
+          mypy --strict --ignore-missing-imports benchmarks/proxy_benchmark.py benchmarks/check_budgets.py
           mypy --follow-imports=skip --ignore-missing-imports \
             --check-untyped-defs \
             --disable-error-code=attr-defined \
