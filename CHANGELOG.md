@@ -19,12 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added profiling scripts (`scripts/profile_cpu.sh`, `scripts/profile_memory.sh`).
 - Added project execution plan (`docs/DEVELOPMENT_PLAN.md`).
 - Added CI performance smoke budget gate in main CI workflow.
+- Added record spool payload guardrails (oversized record truncation + oversized line skip on readback).
 
 ### Changed
 - Expanded CI type-checking scope to include `core/interceptor.py` and `chemistry/*` modules (with practical import handling).
 - Removed CodeQL-wide query exclusion for `py/insecure-protocol`; scanning now relies on code-level mitigations and review.
 - Updated release pipeline with pinned actions and hardened reproducibility practices.
 - Bounded in-memory proxy record retention via `record_limit` in interceptor factory and runtime.
+- Hardened `RecordStore` spill/read paths with size bounds to reduce memory pressure from malformed or oversized spool entries.
 
 ### Security
 - Enforced immutable action references (SHA-pinned `uses:`) across CI, CodeQL, and release workflows.

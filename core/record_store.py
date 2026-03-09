@@ -18,6 +18,8 @@ class RecordStore:
         record_limit: int = 20000,
         spool_path: Optional[str] = None,
         spool_max_bytes: int = 50 * 1024 * 1024,
+        spool_max_record_bytes: int = 16 * 1024,
+        spool_read_max_line_bytes: int = 64 * 1024,
     ):
         self.buffer: Deque[ProxyRecord] = deque(maxlen=max(1000, record_limit))
         self.buffer_lock = threading.Lock()
@@ -29,6 +31,8 @@ class RecordStore:
 
         self.spool_path = spool_path
         self.spool_max_bytes = max(1024, spool_max_bytes)
+        self.spool_max_record_bytes = max(256, spool_max_record_bytes)
+        self.spool_read_max_line_bytes = max(1024, spool_read_max_line_bytes)
         self.spool_lock = threading.Lock()
         self.spool_fp = None
         if self.spool_path:
@@ -78,7 +82,22 @@ class RecordStore:
     def spill_record(self, record: ProxyRecord):
         if not self.spool_fp:
             return
-        payload = json.dumps(self.serialize_record(record), separators=(",", ":"))
+        data = self.serialize_record(record)
+        payload = json.dumps(data, separators=(",", ":"))
+        if len(payload.encode("utf-8")) > self.spool_max_record_bytes:
+            payload = json.dumps(
+                {
+                    "timestamp": data.get("timestamp"),
+                    "method": data.get("method"),
+                    "host": data.get("host"),
+                    "path": "<truncated>",
+                    "status_code": data.get("status_code"),
+                    "passed": data.get("passed"),
+                    "blocked": data.get("blocked"),
+                    "truncated": True,
+                },
+                separators=(",", ":"),
+            )
         with self.spool_lock:
             self._rotate_spool_if_needed_unlocked()
             self.spool_fp.write(payload + "\n")
@@ -118,6 +137,8 @@ class RecordStore:
                     for ln in f:
                         ln = ln.strip()
                         if not ln:
+                            continue
+                        if len(ln.encode("utf-8")) > self.spool_read_max_line_bytes:
                             continue
                         with contextlib.suppress(Exception):
                             entries.append(json.loads(ln))

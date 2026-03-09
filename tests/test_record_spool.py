@@ -247,6 +247,31 @@ class RecordSpoolTest(unittest.TestCase):
             self.assertIsInstance(out, list)
             store2.close()
 
+    def test_record_store_payload_guardrails(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = f"{d}/guard.jsonl"
+            store = RecordStore(record_limit=1000, spool_path=p, spool_max_bytes=1024 * 1024)
+            store.spool_max_record_bytes = 120
+            huge = i.ProxyRecord(
+                request=i.InterceptedRequest(host="h", path="/" + ("a" * 500)),
+                response=i.InterceptedResponse(status_code=200),
+                passed=True,
+            )
+            store.spill_record(huge)
+            with open(p, "r", encoding="utf-8") as f:
+                row = json.loads(f.readline())
+            self.assertTrue(row["truncated"])
+            self.assertEqual(row["path"], "<truncated>")
+
+            with open(p, "a", encoding="utf-8") as f:
+                f.write('{"ok":1}\n')
+                f.write('{"huge":"' + ("b" * 3000) + '"}\n')
+            store.spool_read_max_line_bytes = 256
+            rows = store.get_spooled_records(limit=10)
+            self.assertTrue(any(r.get("ok") == 1 for r in rows))
+            self.assertFalse(any("huge" in r for r in rows))
+            store.close()
+
     def test_h2session_handler_uses_record_sink_in_h1_flow(self):
         sink = mock.Mock()
         handler = i.H2SessionHandler(
