@@ -1,6 +1,6 @@
 black==26.3.0
 mypy==1.19.1
 pip-audit==2.10.0
-pip-tools==7.4.1
+pip-tools==7.5.3
 ruff==0.15.5
 types-requests==2.32.4.20260107
