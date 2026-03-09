@@ -1009,6 +1009,11 @@ class Interceptor:
         self._thread: Optional[threading.Thread] = None
         self._records: Deque[ProxyRecord] = deque(maxlen=max(1000, record_limit))
         self._records_lock = threading.Lock()
+        self._metrics_lock = threading.Lock()
+        self._started_at = time.time()
+        self._total_records = 0
+        self._total_passed = 0
+        self._total_blocked = 0
         self._record_spool_path = record_spool_path
         self._record_spool_max_bytes = max(1024, record_spool_max_bytes)
         self._record_spool_lock = threading.Lock()
@@ -1237,7 +1242,44 @@ class Interceptor:
                 continue
         return entries[-max(1, limit):]
 
+    def get_metrics(self) -> Dict[str, Any]:
+        now = time.time()
+        uptime = max(0.001, now - self._started_at)
+        with self._metrics_lock:
+            total = self._total_records
+            passed = self._total_passed
+            blocked = self._total_blocked
+        with self._records_lock:
+            in_memory = len(self._records)
+            memory_cap = self._records.maxlen or 0
+        spool_size = 0
+        if self._record_spool_path and os.path.exists(self._record_spool_path):
+            with contextlib.suppress(OSError):
+                spool_size = os.path.getsize(self._record_spool_path)
+        return {
+            "uptime_seconds": uptime,
+            "total_records": total,
+            "passed_records": passed,
+            "blocked_records": blocked,
+            "pass_rate": (passed / total) if total else 0.0,
+            "block_rate": (blocked / total) if total else 0.0,
+            "records_per_second": (total / uptime),
+            "in_memory_records": in_memory,
+            "in_memory_capacity": memory_cap,
+            "spool_file": self._record_spool_path,
+            "spool_size_bytes": spool_size,
+        }
+
     def _append_record(self, record: ProxyRecord):
+        metrics_lock = getattr(self, "_metrics_lock", None)
+        if metrics_lock:
+            with metrics_lock:
+                self._total_records += 1
+                if record.passed:
+                    self._total_passed += 1
+                if record.blocked:
+                    self._total_blocked += 1
+
         lock = getattr(self, "_records_lock", None)
         records = getattr(self, "_records", None)
         if records is None:

@@ -207,6 +207,36 @@ class RecordSpoolTest(unittest.TestCase):
         self.assertIsNone(inter._record_spool_fp)
         inter.ca.cleanup.assert_called_once()
 
+    def test_metrics_accounting(self):
+        with tempfile.TemporaryDirectory() as d:
+            spool_path = f"{d}/records.jsonl"
+            with open(spool_path, "w", encoding="utf-8") as f:
+                f.write("{}\n")
+            inter = i.Interceptor(record_limit=1000, record_spool_path=spool_path)
+            inter._append_record(
+                i.ProxyRecord(
+                    request=i.InterceptedRequest(host="a"),
+                    response=i.InterceptedResponse(status_code=200),
+                    passed=True,
+                    blocked=False,
+                )
+            )
+            inter._append_record(
+                i.ProxyRecord(
+                    request=i.InterceptedRequest(host="b"),
+                    response=i.InterceptedResponse(status_code=403),
+                    passed=False,
+                    blocked=True,
+                )
+            )
+            metrics = inter.get_metrics()
+            self.assertEqual(metrics["total_records"], 2)
+            self.assertEqual(metrics["passed_records"], 1)
+            self.assertEqual(metrics["blocked_records"], 1)
+            self.assertGreater(metrics["records_per_second"], 0.0)
+            self.assertGreaterEqual(metrics["spool_size_bytes"], 1)
+            inter.stop()
+
 
 if __name__ == "__main__":
     unittest.main()
