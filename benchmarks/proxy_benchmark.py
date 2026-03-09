@@ -6,7 +6,7 @@ import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List
 from urllib.parse import urlparse
 
 import requests
