@@ -740,6 +740,7 @@ class EvilWAFOrchestrator:
         target_host:      Optional[str] = None,
         upstream_proxies: Optional[List[str]] = None,
         record_limit:     int = 20000,
+        record_spool_file: Optional[str] = None,
     ):
         self._enable_tor = enable_tor
         self._running    = False
@@ -755,6 +756,7 @@ class EvilWAFOrchestrator:
             target_host=target_host,
             upstream_proxies=upstream_proxies,
             record_limit=record_limit,
+            record_spool_path=record_spool_file,
         )
 
         self._tor_table  = TorIPTable()
@@ -849,6 +851,7 @@ def main():
             "  --proxy-file FILE      File with proxy URLs for rotation\n"
             "  --no-tui               Headless mode, print traffic to stdout\n"
             "  --record-limit         In-memory record cap (default: 20000)\n"
+            "  --record-spool-file    Optional JSONL file for evicted records\n"
             "\n"
             "API Keys (optional, set as environment variables):\n"
             "  SHODAN_API_KEY         Shodan API key\n"
@@ -878,6 +881,7 @@ def main():
                         help="File with proxy URLs, one per line, for rotation")
     parser.add_argument("--no-tui",                action="store_true")
     parser.add_argument("--record-limit",          type=int, default=20000)
+    parser.add_argument("--record-spool-file",     type=str, default=None)
 
     args = parser.parse_args()
 
@@ -933,6 +937,8 @@ def main():
 
     print(f"[*] Listen : {args.listen_host}:{args.listen_port}")
     print(f"[*] Record limit : {max(1000, args.record_limit)}")
+    if args.record_spool_file:
+        print(f"[*] Record spool: {args.record_spool_file}")
 
     orchestrator = EvilWAFOrchestrator(
         listen_host=args.listen_host,
@@ -945,6 +951,7 @@ def main():
         target_host=parsed.hostname,
         upstream_proxies=upstream_proxies,
         record_limit=max(1000, args.record_limit),
+        record_spool_file=args.record_spool_file,
     )
 
     orchestrator.start()

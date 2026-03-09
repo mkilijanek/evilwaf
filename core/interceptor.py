@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import ipaddress
+import json
 import os
 import re
 import select
@@ -620,6 +621,7 @@ class H2SessionHandler:
         records_list: List,
         records_lock: threading.Lock,
         is_waf_block: Callable,
+        record_sink: Optional[Callable[[ProxyRecord], None]] = None,
     ):
         self.client_tls = client_tls
         self.server_tls = server_tls
@@ -631,6 +633,7 @@ class H2SessionHandler:
         self.advisor = advisor
         self.records_list = records_list
         self.records_lock = records_lock
+        self.record_sink = record_sink
         self.is_waf_block = is_waf_block
 
     def _make_client_h2(self) -> Optional[H2Connection]:
@@ -797,8 +800,11 @@ class H2SessionHandler:
                                 decryption_successful=True,
                             )
                             records.append(record)
-                            with self.records_lock:
-                                self.records_list.append(record)
+                            if self.record_sink:
+                                self.record_sink(record)
+                            else:
+                                with self.records_lock:
+                                    self.records_list.append(record)
                             if self.callbacks.get("record"):
                                 self.callbacks["record"](record)
                         try:
@@ -923,8 +929,11 @@ class H2SessionHandler:
                 decryption_successful=True,
             )
             records.append(record)
-            with self.records_lock:
-                self.records_list.append(record)
+            if self.record_sink:
+                self.record_sink(record)
+            else:
+                with self.records_lock:
+                    self.records_list.append(record)
             if self.callbacks.get("record"):
                 self.callbacks["record"](record)
 
@@ -988,6 +997,7 @@ class Interceptor:
         target_host: Optional[str] = None,
         upstream_proxies: Optional[List[str]] = None,
         record_limit: int = 20000,
+        record_spool_path: Optional[str] = None,
     ):
         self._host = listen_host
         self._port = listen_port
@@ -997,6 +1007,14 @@ class Interceptor:
         self._thread: Optional[threading.Thread] = None
         self._records: Deque[ProxyRecord] = deque(maxlen=max(1000, record_limit))
         self._records_lock = threading.Lock()
+        self._record_spool_path = record_spool_path
+        self._record_spool_lock = threading.Lock()
+        self._record_spool_fp = None
+        if self._record_spool_path:
+            spool_dir = os.path.dirname(self._record_spool_path)
+            if spool_dir:
+                os.makedirs(spool_dir, exist_ok=True)
+            self._record_spool_fp = open(self._record_spool_path, "a", encoding="utf-8")
 
         self._proxy_rotator = ProxyRotator(proxy_urls=upstream_proxies) if upstream_proxies else None
 
@@ -1128,6 +1146,51 @@ class Interceptor:
     def export_ca_certificates(self, export_dir: Optional[str] = None) -> Dict[str, str]:
         return self.ca.export_ca_certificates(export_dir)
 
+    @staticmethod
+    def _serialize_record(record: ProxyRecord) -> Dict[str, Any]:
+        return {
+            "timestamp": record.request.timestamp,
+            "method": record.request.method,
+            "host": record.request.host,
+            "path": record.request.path,
+            "status_code": record.response.status_code,
+            "passed": record.passed,
+            "blocked": record.blocked,
+            "technique": record.technique_applied,
+            "is_https": record.request.is_https,
+            "response_time": record.response.response_time,
+        }
+
+    def _spill_record(self, record: ProxyRecord):
+        fp = getattr(self, "_record_spool_fp", None)
+        if not fp:
+            return
+        payload = json.dumps(self._serialize_record(record), separators=(",", ":"))
+        lock = getattr(self, "_record_spool_lock", None)
+        if lock:
+            with lock:
+                fp.write(payload + "\n")
+                fp.flush()
+        else:
+            fp.write(payload + "\n")
+            fp.flush()
+
+    def _append_record(self, record: ProxyRecord):
+        lock = getattr(self, "_records_lock", None)
+        records = getattr(self, "_records", None)
+        if records is None:
+            return
+        maxlen = getattr(records, "maxlen", None)
+        if lock:
+            with lock:
+                if maxlen and len(records) >= maxlen:
+                    self._spill_record(records[0])
+                records.append(record)
+            return
+        if maxlen and len(records) >= maxlen:
+            self._spill_record(records[0])
+        records.append(record)
+
     def start(self):
         self._running = True
         interceptor_ref = self
@@ -1203,8 +1266,7 @@ class Interceptor:
                         passed=200 <= resp.status_code < 400,
                         blocked=interceptor_ref._is_waf_block(resp.status_code),
                     )
-                    with interceptor_ref._records_lock:
-                        interceptor_ref._records.append(record)
+                    interceptor_ref._append_record(record)
                     if interceptor_ref._callbacks["record"]:
                         interceptor_ref._callbacks["record"](record)
                     interceptor_ref._forwarder.forward(resp, self)
@@ -1253,6 +1315,7 @@ class Interceptor:
                             records_list=interceptor_ref._records,
                             records_lock=interceptor_ref._records_lock,
                             is_waf_block=interceptor_ref._is_waf_block,
+                            record_sink=interceptor_ref._append_record,
                         )
                         handler.handle()
                         try:
@@ -1323,6 +1386,15 @@ class Interceptor:
         if self._server:
             self._server.shutdown()
             self._server.server_close()
+        spool_fp = getattr(self, "_record_spool_fp", None)
+        spool_lock = getattr(self, "_record_spool_lock", None)
+        if spool_fp:
+            if spool_lock:
+                with spool_lock:
+                    spool_fp.close()
+            else:
+                spool_fp.close()
+            self._record_spool_fp = None
         self.ca.cleanup()
 
     def is_running(self) -> bool:
@@ -1343,6 +1415,7 @@ def create_interceptor(
     target_host: Optional[str] = None,
     upstream_proxies: Optional[List[str]] = None,
     record_limit: int = 20000,
+    record_spool_path: Optional[str] = None,
 ) -> Interceptor:
     return Interceptor(
         listen_host=listen_host,
@@ -1355,5 +1428,6 @@ def create_interceptor(
         target_host=target_host,
         upstream_proxies=upstream_proxies,
         record_limit=record_limit,
+        record_spool_path=record_spool_path,
     )    
     
