@@ -48,6 +48,7 @@ Quality/security checks run in CI:
 Memory safety:
 - `--record-limit` bounds in-memory traffic records (minimum enforced value: `1000`).
 - `--record-spool-file /path/to/records.jsonl` writes evicted records to JSONL once the in-memory cap is reached.
+- `--record-spool-max-mb` rotates and compresses spool archives (`.1.gz`) after size threshold.
 
 ## Architecture (High Level)
 1. Client connects to local proxy.

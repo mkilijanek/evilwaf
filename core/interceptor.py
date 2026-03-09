@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import gzip
 import ipaddress
 import json
 import os
@@ -998,6 +999,7 @@ class Interceptor:
         upstream_proxies: Optional[List[str]] = None,
         record_limit: int = 20000,
         record_spool_path: Optional[str] = None,
+        record_spool_max_bytes: int = 50 * 1024 * 1024,
     ):
         self._host = listen_host
         self._port = listen_port
@@ -1008,6 +1010,7 @@ class Interceptor:
         self._records: Deque[ProxyRecord] = deque(maxlen=max(1000, record_limit))
         self._records_lock = threading.Lock()
         self._record_spool_path = record_spool_path
+        self._record_spool_max_bytes = max(1024, record_spool_max_bytes)
         self._record_spool_lock = threading.Lock()
         self._record_spool_fp = None
         if self._record_spool_path:
@@ -1169,11 +1172,70 @@ class Interceptor:
         lock = getattr(self, "_record_spool_lock", None)
         if lock:
             with lock:
+                self._rotate_spool_if_needed_unlocked()
+                fp = self._record_spool_fp
                 fp.write(payload + "\n")
                 fp.flush()
         else:
+            self._rotate_spool_if_needed_unlocked()
+            fp = self._record_spool_fp
             fp.write(payload + "\n")
             fp.flush()
+
+    def _rotate_spool_if_needed_unlocked(self):
+        spool_path = getattr(self, "_record_spool_path", None)
+        if not spool_path:
+            return
+        fp = getattr(self, "_record_spool_fp", None)
+        if not fp:
+            return
+        try:
+            size = os.path.getsize(spool_path)
+        except OSError:
+            return
+        max_bytes = getattr(self, "_record_spool_max_bytes", 50 * 1024 * 1024)
+        if size < max_bytes:
+            return
+
+        fp.close()
+        rotated = f"{spool_path}.1"
+        gz_path = f"{rotated}.gz"
+        with contextlib.suppress(OSError):
+            os.remove(gz_path)
+        with contextlib.suppress(OSError):
+            os.remove(rotated)
+        os.replace(spool_path, rotated)
+        with open(rotated, "rb") as src, gzip.open(gz_path, "wb", compresslevel=6) as dst:
+            dst.write(src.read())
+        with contextlib.suppress(OSError):
+            os.remove(rotated)
+        self._record_spool_fp = open(spool_path, "a", encoding="utf-8")
+
+    def get_spooled_records(self, limit: int = 200) -> List[Dict[str, Any]]:
+        if not self._record_spool_path:
+            return []
+        entries: List[Dict[str, Any]] = []
+        paths = [f"{self._record_spool_path}.1.gz", self._record_spool_path]
+        for path in paths:
+            if not os.path.exists(path):
+                continue
+            try:
+                if path.endswith(".gz"):
+                    opener = gzip.open
+                else:
+                    opener = open
+                with opener(path, "rt", encoding="utf-8", errors="ignore") as f:
+                    for ln in f:
+                        ln = ln.strip()
+                        if not ln:
+                            continue
+                        try:
+                            entries.append(json.loads(ln))
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+        return entries[-max(1, limit):]
 
     def _append_record(self, record: ProxyRecord):
         lock = getattr(self, "_records_lock", None)
@@ -1416,6 +1478,7 @@ def create_interceptor(
     upstream_proxies: Optional[List[str]] = None,
     record_limit: int = 20000,
     record_spool_path: Optional[str] = None,
+    record_spool_max_bytes: int = 50 * 1024 * 1024,
 ) -> Interceptor:
     return Interceptor(
         listen_host=listen_host,
@@ -1429,5 +1492,6 @@ def create_interceptor(
         upstream_proxies=upstream_proxies,
         record_limit=record_limit,
         record_spool_path=record_spool_path,
+        record_spool_max_bytes=record_spool_max_bytes,
     )    
     

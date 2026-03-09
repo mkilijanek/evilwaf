@@ -89,6 +89,50 @@ class RecordSpoolTest(unittest.TestCase):
         self.assertEqual(inter3._records[0].request.host, "second.example")
         self.assertIn("first.example", inter3._record_spool_fp.getvalue())
 
+    def test_rotate_and_read_guard_branches(self):
+        inter = i.Interceptor.__new__(i.Interceptor)
+        inter._record_spool_path = None
+        inter._record_spool_fp = io.StringIO()
+        inter._record_spool_max_bytes = 1024
+        inter._rotate_spool_if_needed_unlocked()
+
+        inter2 = i.Interceptor.__new__(i.Interceptor)
+        inter2._record_spool_path = "/tmp/no-file.jsonl"
+        inter2._record_spool_fp = None
+        inter2._record_spool_max_bytes = 1024
+        inter2._rotate_spool_if_needed_unlocked()
+
+        inter3 = i.Interceptor.__new__(i.Interceptor)
+        inter3._record_spool_path = "/tmp/no-file.jsonl"
+        inter3._record_spool_fp = io.StringIO()
+        inter3._record_spool_max_bytes = 1024
+        with mock.patch.object(i.os.path, "getsize", side_effect=OSError("x")):
+            inter3._rotate_spool_if_needed_unlocked()
+
+        inter4 = i.Interceptor.__new__(i.Interceptor)
+        inter4._record_spool_path = None
+        self.assertEqual(inter4.get_spooled_records(), [])
+
+        with tempfile.TemporaryDirectory() as d:
+            p = f"{d}/records.jsonl"
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("\n")
+                f.write("{badjson}\n")
+                f.write('{"ok":1}\n')
+
+            inter5 = i.Interceptor.__new__(i.Interceptor)
+            inter5._record_spool_path = p
+            out = inter5.get_spooled_records(limit=5)
+            self.assertEqual(out[-1]["ok"], 1)
+
+            inter6 = i.Interceptor.__new__(i.Interceptor)
+            inter6._record_spool_path = p
+            with open(f"{p}.1.gz", "wb") as _:
+                pass
+            with mock.patch.object(i.gzip, "open", side_effect=OSError("x")):
+                out2 = inter6.get_spooled_records(limit=5)
+            self.assertEqual(out2[-1]["ok"], 1)
+
     def test_h2session_handler_uses_record_sink_in_h1_flow(self):
         sink = mock.Mock()
         handler = i.H2SessionHandler(
@@ -123,6 +167,34 @@ class RecordSpoolTest(unittest.TestCase):
             self.assertIsNotNone(inter._record_spool_fp)
             inter.stop()
             self.assertIsNone(inter._record_spool_fp)
+
+    def test_spool_rotation_compress_and_read_back(self):
+        with tempfile.TemporaryDirectory() as d:
+            spool_path = f"{d}/records.jsonl"
+            inter = i.Interceptor(
+                record_spool_path=spool_path,
+                record_spool_max_bytes=50,
+                record_limit=1000,
+            )
+            for idx in range(30):
+                inter._spill_record(
+                    i.ProxyRecord(
+                        request=i.InterceptedRequest(
+                            timestamp=float(idx),
+                            method="GET",
+                            host=f"h{idx}.example",
+                            path="/",
+                        ),
+                        response=i.InterceptedResponse(status_code=200),
+                        passed=True,
+                    )
+                )
+            self.assertTrue((i.os.path.exists(spool_path)))
+            self.assertTrue((i.os.path.exists(f"{spool_path}.1.gz")))
+            rows = inter.get_spooled_records(limit=20)
+            self.assertTrue(rows)
+            self.assertLessEqual(len(rows), 20)
+            inter.stop()
 
     def test_stop_closes_spool_without_lock(self):
         inter = i.Interceptor.__new__(i.Interceptor)
