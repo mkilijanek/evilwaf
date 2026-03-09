@@ -36,3 +36,8 @@ Include:
 - Coordinated disclosure is expected.
 - Public details are shared after patch availability.
 - Credit is provided unless the reporter requests anonymity.
+
+## Security Baseline
+
+- TLS client operations in origin-recon paths must keep certificate verification enabled.
+- Benchmark and helper tooling must not disable TLS verification unless explicitly marked as test-only.

@@ -26,7 +26,6 @@ def _single_request(proxy_url: str, target_url: str, timeout: float) -> Sample:
             target_url,
             timeout=timeout,
             proxies={"http": proxy_url, "https": proxy_url},
-            verify=False,
         )
         latency_ms = (time.perf_counter() - start) * 1000.0
         return Sample(status_code=resp.status_code, latency_ms=latency_ms, ok=True)

@@ -56,6 +56,20 @@ _HTTP_PROBE_PATHS: list[str]    = _load_lines("http_probe_paths.txt")
 _HTTP_LEAK_HEADERS: list[str]   = _load_lines("http_leak_headers.txt")
 
 
+def _hardened_tls_client_context() -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.load_default_certs()
+    tls_version = getattr(ssl, "TLSVersion", None)
+    if tls_version is not None:
+        ctx.minimum_version = tls_version.TLSv1_2
+    # Runtime fallback compatibility for environments without TLSVersion enum.
+    ctx.options |= getattr(ssl, "OP_NO_TLSv1", 0)
+    ctx.options |= getattr(ssl, "OP_NO_TLSv1_1", 0)
+    return ctx
+
+
 class ConfidenceLevel(Enum):
     LOW      = 0.40
     MEDIUM   = 0.60
@@ -300,11 +314,8 @@ class OriginVerifier:
 
     def verify_cert(self, ip: str) -> bool:
         try:
-            ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-            if hasattr(ssl, "TLSVersion"):
-                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-            # CodeQL false positive: context is strict (SERVER_AUTH + default trust + TLS>=1.2).
-            with ctx.wrap_socket(  # lgtm[py/insecure-protocol]
+            ctx = _hardened_tls_client_context()
+            with ctx.wrap_socket(
                 socket.create_connection((ip, 443), timeout=5),
                 server_hostname=self.domain,
             ) as sock:
@@ -322,12 +333,9 @@ class OriginVerifier:
         for port, use_ssl in [(443, True), (80, False)]:
             try:
                 if use_ssl:
-                    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-                    if hasattr(ssl, "TLSVersion"):
-                        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-                    raw  = socket.create_connection((ip, port), timeout=5)
-                    # CodeQL false positive: context is strict (SERVER_AUTH + default trust + TLS>=1.2).
-                    conn = ctx.wrap_socket(raw, server_hostname=self.domain)  # lgtm[py/insecure-protocol]
+                    ctx = _hardened_tls_client_context()
+                    raw = socket.create_connection((ip, port), timeout=5)
+                    conn = ctx.wrap_socket(raw, server_hostname=self.domain)
                 else:
                     conn = socket.create_connection((ip, port), timeout=5)
 
@@ -506,11 +514,8 @@ class SSLCertificateScanner:
 
     def _probe_cert_san(self, ip: str) -> bool:
         try:
-            ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-            if hasattr(ssl, "TLSVersion"):
-                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-            # CodeQL false positive: context is strict (SERVER_AUTH + default trust + TLS>=1.2).
-            with ctx.wrap_socket(  # lgtm[py/insecure-protocol]
+            ctx = _hardened_tls_client_context()
+            with ctx.wrap_socket(
                 socket.create_connection((ip, 443), timeout=3),
                 server_hostname=self.domain,
             ) as s:

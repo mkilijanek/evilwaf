@@ -27,9 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated release pipeline with pinned actions and hardened reproducibility practices.
 - Bounded in-memory proxy record retention via `record_limit` in interceptor factory and runtime.
 - Hardened `RecordStore` spill/read paths with size bounds to reduce memory pressure from malformed or oversized spool entries.
+- Replaced ad-hoc TLS contexts in origin verification and certificate probes with a hardened client context that enforces certificate validation and modern protocol floors.
+- Updated benchmark client requests to use certificate verification by default (removed insecure `verify=False`).
 
 ### Security
 - Enforced immutable action references (SHA-pinned `uses:`) across CI, CodeQL, and release workflows.
+- Closed CodeQL findings for insecure protocol usage in origin recon paths (`py/insecure-protocol`).
+- Closed CodeQL finding for request without certificate validation in benchmark tooling (`py/request-without-cert-validation`).
 
 ### Planned Improvements
 - Refactor scanner orchestration in `chemistry/origin_server_ip.py` to async bounded concurrency.

@@ -44,11 +44,16 @@ Quality/security checks run in CI:
 - Mypy strict check (selected modules)
 - `pip-audit` on locked dependencies
 - performance budget checks (`.github/workflows/performance.yml`)
+- CodeQL checks for TLS/certificate-validation anti-patterns in Python paths
 
 Memory safety:
 - `--record-limit` bounds in-memory traffic records (minimum enforced value: `1000`).
 - `--record-spool-file /path/to/records.jsonl` writes evicted records to JSONL once the in-memory cap is reached.
 - `--record-spool-max-mb` rotates and compresses spool archives (`.1.gz`) after size threshold.
+
+TLS safety:
+- Origin verification/certificate probing uses a hardened TLS client context with certificate validation enabled.
+- Benchmark traffic uses `requests` with certificate verification enabled by default.
 
 ## Architecture (High Level)
 1. Client connects to local proxy.
