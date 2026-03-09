@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added benchmark and budget tooling (`benchmarks/proxy_benchmark.py`, `benchmarks/check_budgets.py`, `benchmarks/perf_budgets.json`).
 - Added profiling scripts (`scripts/profile_cpu.sh`, `scripts/profile_memory.sh`).
 - Added project execution plan (`docs/DEVELOPMENT_PLAN.md`).
+- Added CI performance smoke budget gate in main CI workflow.
 
 ### Changed
 - Expanded CI type-checking scope to include `core/interceptor.py` and `chemistry/*` modules (with practical import handling).
